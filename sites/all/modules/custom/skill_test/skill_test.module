@@ -1,0 +1,264 @@
+<?php
+
+	/**
+	 * Override drupal existing create new account form.
+	 */
+	function registrasi_form($form, &$form_state){
+	    $form['username'] = array(
+	        '#title' => 'Username',
+	        '#description' => 'Enter a username.',
+	        '#type' => 'textfield',
+	        '#required' => TRUE,
+	    );
+	    $form['password'] = array(
+	        '#title' => 'Password',
+	        '#description' => 'Enter a password.',
+	        '#type' => 'password',
+	        '#required' => TRUE,
+	    );
+	    $form['mail'] = array(
+	        '#title' => 'Email',
+	        '#description' => 'Enter a valid email address.',
+	        '#type' => 'textfield',
+	        '#required' => TRUE,
+	    );
+	    $form['submit'] = array(
+	        '#type' => 'submit',
+	        '#value' => t('Register'),
+	    );
+   
+	    return $form;
+
+    }
+
+    function registrasi_form_validate($form,$form_state)
+    {
+    	$username = $form_state['values']['username'];
+    	$password = $form_state['values']['password'];
+    	$email = $form_state['values']['mail'];
+    	
+    	$query = db_select('users', 'u')->condition('u.name', '%' . db_like($username) . '%', 'LIKE');
+		$query->addExpression('COUNT(*)', 'hitung_jumlah_user');
+
+		$results = $query->execute()->fetchObject();
+		$cek_jumlah_user = $results->hitung_jumlah_user;
+
+		if($cek_jumlah_user >= 1)
+		{
+			form_set_error('username','Username already exists!');
+    	}
+    }
+
+    function registrasi_form_submit($form,$form_state)
+    {
+    	$username = $form_state['values']['username'];
+    	$password = $form_state['values']['password'];
+    	$email = $form_state['values']['mail'];
+
+    	generate_new_account($username,$password,$email);
+    	
+    }
+
+    /**
+	 * Override drupal existing request new password form.
+	 */
+    function forgot_password_form($form,$form_state)
+    {
+    	$form['name'] = array(
+	        '#title' => 'Username or e-mail address',
+	        '#type' => 'textfield',
+	        '#required' => TRUE,
+	    );
+
+	   	$form['submit'] = array(
+	        '#type' => 'submit',
+	        '#value' => t('Send new password'),
+	    );
+
+	    return $form;
+    }
+
+    function forgot_password_form_submit($form,$form_state)
+    {
+
+    }
+
+    function generate_new_account($username,$password,$email)
+    {
+    	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/create'; // .xml asks for xml data in response
+		
+		$post_data = array(
+    		'username' => $username,
+    		'password' => $password,
+    		'mail' => $email
+    	);
+
+		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
+		// set up the request
+		$curl = curl_init($service_url);
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);  // have curl_exec return a string
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+
+		curl_setopt($curl, CURLOPT_POST, true);             // do a POST
+		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // POST this data
+		// make the request
+		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
+		$response = curl_exec($curl);
+		curl_close($curl);
+		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+    }
+
+	/**
+	 * Implements of hook_services_resources().
+	 */
+	function skill_test_services_resources() {
+	  	$api = array(
+	    	'registration' => array(
+	      		'actions' => array(
+	        		'create' => array(
+	          			'help' => 'Register account user',
+	          			'callback' => '_skill_test_blog_retrieve',
+	          			'access callback' => '_skill_test_access',
+	          			'access arguments' => array('access content'),
+	          			'access arguments append' => FALSE,
+	          			'args' => array(
+	            			array(
+	              				'name' => 'account',
+	              				'type' => 'array',
+	              				'description' => 'The user object',
+	              				'source' => 'data',
+	              				'optional' => FALSE,
+	            			),
+	          			),
+	        		),
+	        		'forgot' => array(
+	          			'help' => 'Request new password',
+	          			'callback' => '_skill_test_request_new_password',
+	          			'access callback' => '_skill_test_access',
+	          			'access arguments' => array('access content'),
+	          			'access arguments append' => FALSE,
+	          			'args' => array(
+	            			array(
+	              				'name' => 'account',
+	              				'type' => 'array',
+	              				'description' => 'The user object',
+	              				'source' => 'data',
+	              				'optional' => FALSE,
+	            			),
+	          			),
+	        		),
+	      		),
+	    	),
+	  	);
+	  	return $api;
+	}
+
+	/** 
+	* Access callback 
+	*/ 
+	function _skill_test_access() { return TRUE; }
+	
+	/**
+ 	* Callback function for register account user
+ 	*/
+	function _skill_test_blog_retrieve($args) {
+		//set up the user fields
+		$username = $args['username'];
+		$password = $args['password'];
+		$email = $args['mail'];
+		$fields = array(
+			'name' => $username,
+			'mail' => $email,
+			'pass' => $password,
+			'status' => 1,
+			'init' => $email,
+			'roles' => array(
+				DRUPAL_AUTHENTICATED_RID => 'authenticated user',
+			),
+		);
+
+		//the first parameter is left blank so a new user is created
+		$account = user_save('', $fields);
+
+		return var_dump(json_encode($args));
+	}
+
+	/**
+ 	* Callback function for request new password
+ 	*/
+	function _skill_test_request_new_password($args) {
+	
+	}
+
+	function custom_drupal_mail($from = 'default_from', $to, $subject = null, $message, $filename = null, $filepath = null) {
+  		$my_module = 'custom';
+  		$my_mail_token = microtime();
+  		if ($from == 'default_from') {
+    		$from = variable_get('system_mail', 'Serial Games Drupal <serial_games@sg.co.id>');
+  		}
+	  
+  		if ($filepath != null) {
+    		$uri = $filepath;
+    		if ($wrapper = file_stream_wrapper_get_instance_by_uri($uri)) {
+      			$path = $wrapper->realpath();
+    		}
+    		//drupal_set_message('Real Path : '.$path);
+    		//* Default File Type : PDF
+    		$attachment = array(
+      			'filecontent' => file_get_contents($path),
+      			'filename' => $filename,
+      			'filemime' => 'application/pdf',
+    		);
+  		}
+  
+		if(isset($attachment)){
+			$message = array(
+    			'id' => $my_module . '_' . $my_mail_token,
+	  			'from' => $from,
+    			'to' => $to,
+    			'subject' => $subject,
+    			'body' => array($message),
+    			'headers' => array(
+      				//'Content-Type' => 'text/plain; charset=UTF-8;', // XXX
+	  				'Content-Type' => 'text/html; charset=iso-8859-1; format=flowed',
+      				'From' => $from, 
+      				'Sender' => $from, 
+      				'Return-Path' => $from,
+    			),
+    			'params' => array(
+      				'attachments' => array($attachment),
+    			)
+  			);
+    	}else{
+			$message = array(
+    			'id' => $my_module . '_' . $my_mail_token,
+	  			'from' => $from,
+    			'to' => $to,
+    			'subject' => $subject,
+    			'body' => array($message),
+    			'headers' => array(
+      				//'Content-Type' => 'text/plain; charset=UTF-8;', // XXX
+	  				'Content-Type' => 'text/html; charset=iso-8859-1; format=flowed',
+      				'From' => $from, 
+      				'Sender' => $from, 
+      				'Return-Path' => $from,
+    			),
+    			'params' => array(
+      				'attachments' => array(),
+    			)
+  			);
+    	}
+    
+  		$system = drupal_mail_system($my_module, $my_mail_token);
+  		$message = $system->format($message);
+  		if ($system->mail($message)) {
+    		return TRUE;
+  		}
+  		else {
+    		return FALSE;
+  		}
+	}
+
+
+
+?>

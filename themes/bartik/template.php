@@ -154,3 +154,50 @@ function bartik_field__taxonomy_term_reference($variables) {
 
   return $output;
 }
+
+function bartik_theme() {
+  $items = array();
+  // create custom user-login.tpl.php
+  $items['user_login'] = array(
+  'render element' => 'form',
+  'path' => drupal_get_path('theme', 'bartik') . '/templates',
+  'template' => 'user-login',
+  'preprocess functions' => array(
+  'bartik_preprocess_user_login'
+  ),
+ );
+
+  // create custom user-register-form.tpl.php
+  $items['user_register_form'] = array(
+    'render element' => 'form',
+    'path' => drupal_get_path('theme', 'bartik') . '/templates',
+    'template' => 'user-register-form',
+    'preprocess functions' => array(
+      'bartik_preprocess_user_register_form'
+    ),
+  );
+
+  // create custom user-password.tpl.php
+  $items['user_pass'] = array(
+    'render element' => 'form',
+    'path' => drupal_get_path('theme', 'bartik') . '/templates',
+    'template' => 'user-password',
+    'preprocess functions' => array(
+      'bartik_preprocess_user_password'
+    ),
+  );
+
+  return $items;
+}
+
+function bartik_get_register_form() {
+    $ambil_form_register = drupal_get_form('registrasi_form');
+    $form = drupal_render($ambil_form_register);
+    return $form;
+}
+
+function bartik_get_forgot_password_form() {
+    $ambil_form_forgot_password = drupal_get_form('forgot_password_form');
+    $form = drupal_render($ambil_form_forgot_password);
+    return $form;
+}

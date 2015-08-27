@@ -1,0 +1,6 @@
+name = Skill Test
+description = Daftar function untuk skill test
+core = 7.x
+version = 7.x-1.1
+package = "Custom"
+project = Custom

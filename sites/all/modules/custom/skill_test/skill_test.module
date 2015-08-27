@@ -37,7 +37,7 @@
     	$password = $form_state['values']['password'];
     	$email = $form_state['values']['mail'];
     	
-    	$query = db_select('users', 'u')->condition('u.name', '%' . db_like($username) . '%', 'LIKE');
+    	$query = db_select('users', 'u')->condition('u.name', $username);
 		$query->addExpression('COUNT(*)', 'hitung_jumlah_user');
 
 		$results = $query->execute()->fetchObject();
@@ -56,7 +56,6 @@
     	$email = $form_state['values']['mail'];
 
     	generate_new_account($username,$password,$email);
-    	
     }
 
     /**
@@ -78,9 +77,28 @@
 	    return $form;
     }
 
+    function forgot_password_form_validate($form,$form_state)
+    {
+    	$name = $form_state['values']['name'];
+
+    	$query = db_select('users', 'u')
+    				->condition(db_or()->condition('u.name', $name)->condition('u.mail', $name));
+		$query->addExpression('COUNT(*)', 'hitung_jumlah_user');
+
+		$results = $query->execute()->fetchObject();
+		$cek_jumlah_user = $results->hitung_jumlah_user;
+
+		if($cek_jumlah_user < 1)
+		{
+			form_set_error('name','Username or e-mail does not exist!');
+    	}
+    }
+
     function forgot_password_form_submit($form,$form_state)
     {
+    	$name = $form_state['values']['name'];
 
+    	generate_new_password($name);
     }
 
     function generate_new_account($username,$password,$email)
@@ -91,6 +109,29 @@
     		'username' => $username,
     		'password' => $password,
     		'mail' => $email
+    	);
+
+		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
+		// set up the request
+		$curl = curl_init($service_url);
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);  // have curl_exec return a string
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+
+		curl_setopt($curl, CURLOPT_POST, true);             // do a POST
+		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // POST this data
+		// make the request
+		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
+		$response = curl_exec($curl);
+		curl_close($curl);
+		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+    }
+
+    function generate_new_password($name)
+    {
+    	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/forgot'; // .xml asks for xml data in response
+		
+		$post_data = array(
+    		'name' => $name,
     	);
 
 		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
@@ -141,7 +182,7 @@
 	            			array(
 	              				'name' => 'account',
 	              				'type' => 'array',
-	              				'description' => 'The user object',
+	              				'description' => 'forgot',
 	              				'source' => 'data',
 	              				'optional' => FALSE,
 	            			),
@@ -187,7 +228,18 @@
  	* Callback function for request new password
  	*/
 	function _skill_test_request_new_password($args) {
-	
+    	global $base_url;
+		$name = $args['name'];
+
+		$query = db_select('users', 'u')
+	    		->fields('u',array('name','mail'))
+	    		->condition(db_or()->condition('u.name', $name)->condition('u.mail', $name));
+	   	$results = $query->execute()->fetchObject();
+
+	   	$email = $results->mail;
+
+	   	$mail_sent = custom_drupal_mail('default_from', $email, '(Serial Games) - Konfirmasi Reset Password', 'Kepada Yth. Pemilik email '.$email.'<br/> di<br/> Tempat<br/><br/>Untuk melakukan proses reset password, silahkan klik tautan di bawah ini.<br/><a href="'.$base_url.'" target="_blank">Klik disini</a><br/><br/>Hormat kami<br/><br/>Pengelola');
+		return var_dump($email);
 	}
 
 	function custom_drupal_mail($from = 'default_from', $to, $subject = null, $message, $filename = null, $filepath = null) {

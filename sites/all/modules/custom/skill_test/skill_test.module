@@ -1,5 +1,88 @@
 <?php
 
+	function skill_test_permission(){
+   		return array(
+	       	'skill_test' => array('title' => 'Access Skill Test Module')
+   		);
+	}
+
+	function skill_test_menu() {
+  		$items['skill_test/upload_file'] = array (
+     		'title' => 'Upload File',
+     		'type' => MENU_CALLBACK,
+     		'page callback' => 'page_upload_file',
+     		'access arguments' => array('skill_test'),
+   		);
+
+  		return $items;
+	}
+
+	function page_upload_file()
+	{
+		$form_upload_file = drupal_get_form('form_upload_file');
+		$output = drupal_render($form_upload_file);
+		return $output; 
+	}
+
+	function form_upload_file($form,$form_state)
+	{
+		$form['file'] = array(
+			'#type' => 'file',
+			'#title' => 'File',
+			'#required' => FALSE,
+		);
+
+		$form['submit'] = array(
+			'#type' => 'submit',
+			'#value' => 'Upload',
+		);
+
+		return $form;
+	}
+
+	function form_upload_file_submit($form,$form_state)
+	{
+		$url = 'http://localhost/serial_games_drupal/api/registration/registration/upload'; // request URL
+		$filename = $_FILES['files']['name']['file'];
+		$filedata = $_FILES['files']['tmp_name']['file'];
+		$filesize = $_FILES['files']['size']['file'];
+		if ($filedata != '')
+		{
+    		$headers = array("Content-Type:multipart/form-data"); // cURL headers for file uploading
+    		$postfields = array("filedata" => "@$filedata", "filename" => $filename);
+    		$ch = curl_init();
+    		$options = array(
+        		CURLOPT_URL => $url,
+        		CURLOPT_HEADER => true,
+        		CURLOPT_POST => 1,
+        		CURLOPT_HTTPHEADER => $headers,
+        		CURLOPT_POSTFIELDS => $postfields,
+        		CURLOPT_INFILESIZE => $filesize,
+        		CURLOPT_RETURNTRANSFER => true
+    		); // cURL options
+    		curl_setopt_array($ch, $options);
+    		$response = curl_exec($ch);
+    		if(!curl_errno($ch))
+    		{
+	        	$info = curl_getinfo($ch);
+        		if ($info['http_code'] == 200)
+	            	$errmsg = "File uploaded successfully";
+    		}
+    		else
+    		{
+	        	$errmsg = curl_error($ch);
+    		}
+    		curl_close($ch);
+		}
+		else
+		{
+    		$errmsg = "Please select the file";
+		}
+		
+		drupal_set_message($errmsg);
+		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+	}
+
 	/**
 	 * Override drupal existing create new account form.
 	 */
@@ -101,6 +184,9 @@
     	generate_new_password($name);
     }
 
+    /**
+	* REST API for Create New Account
+	*/
     function generate_new_account($username,$password,$email)
     {
     	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/create'; // .xml asks for xml data in response
@@ -126,6 +212,9 @@
 		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
     }
 
+    /**
+	* REST API for Forgot Password
+	*/
     function generate_new_password($name)
     {
     	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/forgot'; // .xml asks for xml data in response
@@ -182,7 +271,23 @@
 	            			array(
 	              				'name' => 'account',
 	              				'type' => 'array',
-	              				'description' => 'forgot',
+	              				'description' => 'forgot password',
+	              				'source' => 'data',
+	              				'optional' => FALSE,
+	            			),
+	          			),
+	        		),
+	        		'upload' => array(
+	          			'help' => 'Upload File',
+	          			'callback' => '_skill_test_upload_file',
+	          			'access callback' => '_skill_test_access',
+	          			'access arguments' => array('access content'),
+	          			'access arguments append' => FALSE,
+	          			'args' => array(
+	            			array(
+	              				'name' => 'attc',
+	              				'type' => 'array',
+	              				'description' => 'upload file',
 	              				'source' => 'data',
 	              				'optional' => FALSE,
 	            			),
@@ -240,6 +345,24 @@
 
 	   	$mail_sent = custom_drupal_mail('default_from', $email, '(Serial Games) - Konfirmasi Reset Password', 'Kepada Yth. Pemilik email '.$email.'<br/> di<br/> Tempat<br/><br/>Untuk melakukan proses reset password, silahkan klik tautan di bawah ini.<br/><a href="'.$base_url.'" target="_blank">Klik disini</a><br/><br/>Hormat kami<br/><br/>Pengelola');
 		return var_dump($email);
+	}
+
+	/**
+ 	* Callback function for upload file
+ 	*/
+	function _skill_test_upload_file($args) {
+		if(isset($_FILES['filedata']['name'])){
+			$validator = array();
+			if(move_uploaded_file($_FILES["filedata"]["tmp_name"],"public://" . $args['filename']))
+			{
+				$msg = "sukses";
+			}
+			else
+			{
+				$msg = "gagal";
+			}
+		}
+		return var_dump(json_encode($args));
 	}
 
 	function custom_drupal_mail($from = 'default_from', $to, $subject = null, $message, $filename = null, $filepath = null) {

@@ -13,6 +13,18 @@
      		'page callback' => 'page_upload_file',
      		'access arguments' => array('skill_test'),
    		);
+   		$items['skill_test/game_score'] = array (
+     		'title' => 'Game Score',
+     		'type' => MENU_CALLBACK,
+     		'page callback' => 'page_game_score',
+     		'access arguments' => array('skill_test'),
+   		);
+   		$items['skill_test/logout'] = array (
+     		'title' => 'Log Out',
+     		'type' => MENU_CALLBACK,
+     		'page callback' => 'act_logout',
+     		'access arguments' => array('skill_test'),
+   		);
 
   		return $items;
 	}
@@ -73,6 +85,7 @@
 	        	$errmsg = curl_error($ch);
     		}
     		curl_close($ch);
+    		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
 		}
 		else
 		{
@@ -80,7 +93,57 @@
 		}
 		
 		drupal_set_message($errmsg);
-		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+	}
+
+	function page_game_score()
+	{
+		$form_game_score = drupal_get_form('form_game_score');
+		$output = drupal_render($form_game_score);
+		return $output; 
+	}
+
+	function form_game_score($form,$form_state)
+	{
+		global $user;
+
+		drupal_set_message("<pre>".print_r($user,TRUE)."</pre>");
+
+		$form['game_name'] = array(
+	        '#title' => 'Game Name',
+	        '#description' => 'Enter game name.',
+	        '#type' => 'textfield',
+	        '#required' => TRUE,
+	    );
+
+	    $form['player'] = array(
+	        '#title' => 'Player Name',
+	        '#description' => 'Enter player name.',
+	        '#type' => 'textfield',
+	        '#required' => TRUE,
+	    );
+
+	     $form['score'] = array(
+	        '#title' => 'Score',
+	        '#description' => 'Enter game score.',
+	        '#type' => 'textfield',
+	        '#required' => TRUE,
+	    );
+
+	     $form['submit'] = array(
+	        '#type' => 'submit',
+	        '#value' => t('Save'),
+	    );
+
+	     return $form;
+	}
+
+	function form_game_score_submit($form,$form_state)
+	{
+		$game_name = $form_state['values']['game_name'];
+		$player = $form_state['values']['player'];
+		$score = $form_state['values']['score'];
+
+		generate_game_score($game_name,$player,$score);
 	}
 
 	/**
@@ -142,6 +205,61 @@
     }
 
     /**
+	 * Override drupal existing login form.
+	 */
+    function login_form($form,$form_state)
+    {
+    	global $user;
+
+		// If we are already logged on, go to the user page instead.
+		if ($user->uid) {
+			drupal_goto('user/' . $user->uid);
+		}
+
+		// Display login form:
+  		$form['name'] = array('#type' => 'textfield',
+    		'#title' => t('Username'),
+    		'#size' => 60,
+    		'#maxlength' => USERNAME_MAX_LENGTH,
+    		'#required' => TRUE,
+  		);
+
+  		$form['name']['#description'] = t('Enter your @s username.', array('@s' => variable_get('site_name', 'Drupal')));
+  		$form['pass'] = array('#type' => 'password',
+    		'#title' => t('Password'),
+    		'#description' => t('Enter the password that accompanies your username.'),
+    		'#required' => TRUE,
+  		);
+
+  		$form['login_markup'] = array(
+  			'#type' => 'markup',
+  			'#markup' => '<div class="user-links">
+        					<span class="passlink"><a href="user/password">Forget your password?</a></span> | <span class="reglink"><a href="user/register">Create an account</a></span>
+    					  </div>',
+  		);
+
+  		$form['actions'] = array('#type' => 'actions');
+  		$form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Log in'));
+
+  		return $form;
+    }
+
+    function login_form_submit($form,$form_state)
+    {
+    	global $user;
+
+    	$username = $form_state['values']['name'];
+    	$password = $form_state['values']['pass'];
+
+    	generate_login_user($username,$password);
+    }
+
+    function act_logout()
+    {
+    	generate_logout_user();
+    }
+
+    /**
 	 * Override drupal existing request new password form.
 	 */
     function forgot_password_form($form,$form_state)
@@ -189,7 +307,8 @@
 	*/
     function generate_new_account($username,$password,$email)
     {
-    	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/create'; // .xml asks for xml data in response
+    	global $base_url;
+    	$service_url = $base_url.'/api/registration/registration/create'; // .xml asks for xml data in response
 		
 		$post_data = array(
     		'username' => $username,
@@ -217,7 +336,8 @@
 	*/
     function generate_new_password($name)
     {
-    	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/forgot'; // .xml asks for xml data in response
+    	global $base_url;
+    	$service_url = $base_url.'/api/registration/registration/forgot'; // .xml asks for xml data in response
 		
 		$post_data = array(
     		'name' => $name,
@@ -236,6 +356,145 @@
 		$response = curl_exec($curl);
 		curl_close($curl);
 		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+    }
+
+    /**
+	* REST API for Input Game Score
+	*/
+    function generate_game_score($game_name,$player_name,$score)
+    {
+    	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/score'; // .xml asks for xml data in response
+		
+		$post_data = array(
+    		'game_name' => $game_name,
+    		'player_name' => $player_name,
+    		'score' => $score
+    	);
+
+		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
+		// set up the request
+		$curl = curl_init($service_url);
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);  // have curl_exec return a string
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+
+		curl_setopt($curl, CURLOPT_POST, true);             // do a POST
+		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // POST this data
+		// make the request
+		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
+		$response = curl_exec($curl);
+		curl_close($curl);
+		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+    }
+
+    /**
+	* REST API for Login User
+	*/
+    function generate_login_user($username,$password)
+    {
+    	global $base_url;
+		// Retrieve CSRF token
+		$curl_get = curl_init();
+		curl_setopt_array($curl_get, array(
+    		CURLOPT_RETURNTRANSFER => 1,
+    		CURLOPT_URL => $base_url.'/api/registration/user/token',
+		));
+		$csrf_token = curl_exec($curl_get);
+		curl_close($curl_get);
+		$csrf_header = 'X-CSRF-Token: ' . $csrf_token;
+
+		// REST Server URL
+		$request_url =  $base_url.'/api/registration/registration/signin.json';
+
+		// User data
+		$user_data = array(
+  			'username' => trim($username),
+  			'password' => trim($password),
+		);
+
+		$userdata = json_encode($user_data);
+
+		// cURL
+		$curl = curl_init();
+		curl_setopt($curl, CURLOPT_URL, $request_url);
+		curl_setopt($curl, CURLOPT_POST, 1); // Do a regular HTTP POST
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json',$csrf_header));
+		curl_setopt($curl, CURLOPT_POSTFIELDS, $userdata); // Set POST data
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+
+		$response = curl_exec($curl);
+		
+		$http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+		$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+		$header = substr($response, 0, $header_size);
+		$body = substr($response, $header_size);
+
+		curl_close($curl);
+
+		drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
+		drupal_set_message("<pre>".print_r(json_decode($body),TRUE)."</pre>");
+
+		$content = json_decode($body);
+
+		$status = $content->status;
+		$ket_status = $content->ket_status;
+		if($status == 'S')
+		{
+			$user_obj = user_load_by_name($username);
+      		$form_state = array();
+      		$form_state['uid'] = $user_obj->uid;      
+      		user_login_submit(array(), $form_state);
+		}
+    }
+
+    /**
+	* REST API for Logout User
+	*/
+    function generate_logout_user()
+    {
+    	global $base_url;
+    	global $user;
+
+    	// Retrieve CSRF token
+		$curl_get = curl_init();
+		curl_setopt_array($curl_get, array(
+    		CURLOPT_RETURNTRANSFER => 1,
+    		CURLOPT_URL => $base_url.'/api/registration/user/token',
+		));
+		$csrf_token = curl_exec($curl_get);
+		curl_close($curl_get);
+		$csrf_header = 'X-CSRF-Token: ' . $csrf_token;
+
+		// REST Server URL
+		$request_url =  $base_url.'/api/registration/registration/signout';
+
+		// cURL
+		$curl = curl_init();
+		curl_setopt($curl, CURLOPT_URL, $request_url);
+		curl_setopt($curl, CURLOPT_POST, 1); // Do a regular HTTP POST
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json',$csrf_header));
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
+
+		$response = curl_exec($curl);
+		
+/*		$http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+		$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+		$header = substr($response, 0, $header_size);
+		$body = substr($response, $header_size);*/
+
+		curl_close($curl);
+		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");		
+
+/*		drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
+		drupal_set_message("<pre>".print_r(json_decode($body),TRUE)."</pre>");
+
+		$content = json_decode($body);
+
+		$status = $content->status;
+		$ket_status = $content->ket_status;*/
+		return TRUE;
     }
 
 	/**
@@ -293,6 +552,44 @@
 	            			),
 	          			),
 	        		),
+	        		'signin' => array(
+	          			'help' => 'Login user',
+	          			'callback' => '_skill_test_login_usr',
+	          			'access callback' => '_skill_test_access',
+	          			'access arguments' => array('access content'),
+	          			'access arguments append' => FALSE,
+	          			'args' => array(
+	            			array(
+	              				'name' => 'account',
+	              				'type' => 'array',
+	              				'description' => 'Login user',
+	              				'source' => 'data',
+	              				'optional' => FALSE,
+	            			),
+	          			),
+	        		),
+	        		'score' => array(
+	          			'help' => 'Input Game Score',
+	          			'callback' => '_skill_test_game_score',
+	          			'access callback' => '_skill_test_access',
+	          			'access arguments' => array('access content'),
+	          			'access arguments append' => FALSE,
+	          			'args' => array(
+	            			array(
+	              				'name' => 'account',
+	              				'type' => 'array',
+	              				'description' => 'Input game score',
+	              				'source' => 'data',
+	              				'optional' => FALSE,
+	            			),
+	          			),
+	        		),
+	        		'signout' => array(
+	          			'help' => 'Logout user',
+	          			'callback' => '_skill_test_logout_usr',
+	          			'access callback' => '_skill_test_access',
+	          			'access arguments' => array('access content'),
+	        		),
 	      		),
 	    	),
 	  	);
@@ -347,6 +644,83 @@
 		return var_dump($email);
 	}
 
+
+	/**
+ 	* Callback function for login user
+ 	*/
+	function _skill_test_login_usr($args)
+	{
+		$username = $args['username'];
+		$password = $args['password'];
+
+		$query = db_select('users', 'u')
+	    			->fields('u',array('name','mail'))
+	    			->condition('u.name', $username)
+	    			->condition('u.status', '1');
+	   	$results = $query->execute()->fetchObject();
+
+	   	if($results)
+	   	{
+	   		$generate_uid = user_authenticate($username, $password);
+	   		if($generate_uid)
+	   		{
+	   			$status = "S";
+	   			$ket_status = "Authentication Success";
+	   		}
+	   		else
+	   		{
+	   			$status = "E";
+	   			$ket_status = "Sorry, unrecognized username or password";
+	   		}
+	   	}
+	   	else
+	   	{
+	   		$status = "E";
+	   		if(user_is_blocked($username))
+	   		{
+	   			$ket_status = "The username ".$username." has not been activated or is blocked";
+	   		}
+	   		else
+	   		{
+	   			$ket_status = "Sorry, unrecognized username or password";
+	   		}
+	   	}
+
+	   	$data['status'] = $status;
+	   	$data['ket_status'] = $ket_status;
+		return $data;
+	}
+
+	/**
+ 	* Callback function for logout user
+ 	*/
+	function _skill_test_logout_usr()
+	{
+	  	global $user;
+
+	  	if (!$user->uid) {
+		    // User is not logged in
+	    	return services_error(t('User is not logged in.'), 406);
+	  	}
+
+	  	watchdog('user', 'Session closed for %name.', array('%name' => $user->name));
+
+	  	// Destroy the current session.
+	  	module_invoke_all('user_logout', $user);
+	  	session_destroy();
+
+	  	// Load the anonymous user.
+	  	$user = drupal_anonymous_user();
+
+		$status = "S";
+		$ket_status = "Logout Success";
+
+		$data['status'] = $status;
+	   	$data['ket_status'] = $ket_status;
+	   	return $user;
+	}
+
+
 	/**
  	* Callback function for upload file
  	*/
@@ -363,6 +737,24 @@
 			}
 		}
 		return var_dump(json_encode($args));
+	}
+
+	/**
+ 	* Callback function for input game score
+ 	*/
+	function _skill_test_game_score($args)
+	{
+		$game_name = $args['game_name'];
+		$player_name = $args['player_name'];
+		$score = $args['score'];
+
+		$pdid = db_insert('game_score')
+					->fields(array(
+						'game_name' => $game_name,
+						'player_name' => $player_name,
+						'score' => $score,
+					))->execute();
+		return var_dump($args);
 	}
 
 	function custom_drupal_mail($from = 'default_from', $to, $subject = null, $message, $filename = null, $filepath = null) {

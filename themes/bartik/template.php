@@ -196,6 +196,12 @@ function bartik_get_register_form() {
     return $form;
 }
 
+function bartik_get_login_form() {
+    $ambil_form_login = drupal_get_form('login_form');
+    $form = drupal_render($ambil_form_login);
+    return $form;
+}
+
 function bartik_get_forgot_password_form() {
     $ambil_form_forgot_password = drupal_get_form('forgot_password_form');
     $form = drupal_render($ambil_form_forgot_password);

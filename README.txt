@@ -6,6 +6,7 @@ A. Status pengerjaan
    - Rest API untuk lupa password
    - Rest API untuk upload file
    - Rest API untuk menyimpan nilai dari setiap game
+   - Rest API untuk login
 2. Progress
-   - Rest API untuk login & logout
+   - Rest API untuk logout
    - Rest API untuk penentuan leaderboard setiap game

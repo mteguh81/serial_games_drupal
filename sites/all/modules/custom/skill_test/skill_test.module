@@ -19,6 +19,12 @@
      		'page callback' => 'page_game_score',
      		'access arguments' => array('skill_test'),
    		);
+   		$items['skill_test/game_rank'] = array (
+     		'title' => 'Input Game Rank',
+     		'type' => MENU_CALLBACK,
+     		'page callback' => 'act_game_rank',
+     		'access arguments' => array('skill_test'),
+   		);
    		$items['skill_test/logout'] = array (
      		'title' => 'Log Out',
      		'type' => MENU_CALLBACK,
@@ -99,6 +105,7 @@
 	{
 		$form_game_score = drupal_get_form('form_game_score');
 		$output = drupal_render($form_game_score);
+		$output .= page_list_game_leaderboard();
 		return $output; 
 	}
 
@@ -106,30 +113,42 @@
 	{
 		global $user;
 
-		drupal_set_message("<pre>".print_r($user,TRUE)."</pre>");
+		$form['game_score'] = array(
+			'#type' => 'fieldset',
+			'#title' => 'Add Data',
+		);
 
-		$form['game_name'] = array(
+		$form['game_score']['game_name'] = array(
 	        '#title' => 'Game Name',
 	        '#description' => 'Enter game name.',
 	        '#type' => 'textfield',
 	        '#required' => TRUE,
 	    );
 
-	    $form['player'] = array(
+	    $form['game_score']['player'] = array(
 	        '#title' => 'Player Name',
 	        '#description' => 'Enter player name.',
 	        '#type' => 'textfield',
 	        '#required' => TRUE,
 	    );
 
-	     $form['score'] = array(
+	    $form['game_score']['score'] = array(
 	        '#title' => 'Score',
 	        '#description' => 'Enter game score.',
 	        '#type' => 'textfield',
 	        '#required' => TRUE,
 	    );
 
-	     $form['submit'] = array(
+	    $form['game_score']['type'] = array(
+	    	'#title' => 'Type',
+	    	'#description' => 'Select game type.',
+	    	'#type' => 'select',
+	    	'#options' => array('A' => 'A', 'B' => 'B', 'C' => 'C', 'D' => 'D', 'E' => 'E', 'F' => 'F', 'G' => 'G', 'H' => 'H', 
+	    						'I' => 'I', 'J' => 'J'),
+	        '#required' => TRUE,
+	    );
+	    
+	    $form['game_score']['submit'] = array(
 	        '#type' => 'submit',
 	        '#value' => t('Save'),
 	    );
@@ -137,13 +156,56 @@
 	     return $form;
 	}
 
+
 	function form_game_score_submit($form,$form_state)
 	{
 		$game_name = $form_state['values']['game_name'];
 		$player = $form_state['values']['player'];
 		$score = $form_state['values']['score'];
+		$type = $form_state['values']['type'];
 
-		generate_game_score($game_name,$player,$score);
+		generate_game_score($game_name,$player,$score,$type);
+	}
+
+	function page_list_game_leaderboard()
+	{
+		$output = "<table>
+						<tr>
+							<td>Game Name</td>
+							<td>Player Name</td>
+							<td>Score</td>
+							<td>Rank</td>
+						</tr>
+					";
+
+		$query = db_select('game_score', 'g')
+		    			->fields('g',array('game_name','player_name','score','type','rank',))
+		    			->orderBy('type')
+		    			->orderBy('score', 'DESC');
+		$results = $query->execute();
+
+		while($hasil = $results->fetchObject())
+		{
+			$game_name = $hasil->game_name;
+			$player_name = $hasil->player_name;
+			$score = $hasil->score;
+			$rank = $hasil->rank;
+
+			$output .= "<tr>
+							<td>".$game_name."</td>
+							<td>".$player_name."</td>
+							<td>".$score."</td>
+							<td>".$rank."</td>
+						</tr>";
+		}
+		$output .= "</table><a href = 'game_rank'><button class = 'form-submit'>Generate Leaderboard</button></a>";
+
+		return $output;
+	}
+
+	function act_game_rank()
+	{
+		generate_game_leaderboard();
 	}
 
 	/**
@@ -361,14 +423,15 @@
     /**
 	* REST API for Input Game Score
 	*/
-    function generate_game_score($game_name,$player_name,$score)
+    function generate_game_score($game_name,$player_name,$score,$type)
     {
     	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/score'; // .xml asks for xml data in response
 		
 		$post_data = array(
     		'game_name' => $game_name,
     		'player_name' => $player_name,
-    		'score' => $score
+    		'score' => $score,
+    		'type' => $type
     	);
 
 		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
@@ -497,6 +560,39 @@
 		return TRUE;
     }
 
+    /**
+	* REST API for Game Leaderboard
+	*/
+    function generate_game_leaderboard()
+    {
+    	global $base_url;
+
+		// REST Server URL
+		$request_url =  $base_url.'/api/registration/registration/leaderboard.json';
+
+		// cURL
+		$curl = curl_init();
+		curl_setopt($curl, CURLOPT_URL, $request_url);
+		curl_setopt($curl, CURLOPT_POST, 1); // Do a regular HTTP POST
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+		curl_setopt($curl, CURLOPT_POSTFIELDS, ''); // Set POST data
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+
+		$response = curl_exec($curl);
+	
+		$http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+		$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+		$header = substr($response, 0, $header_size);
+		$body = substr($response, $header_size);
+
+		curl_close($curl);
+
+		drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
+		drupal_set_message("<pre>".print_r(json_decode($body),TRUE)."</pre>");
+		drupal_goto("skill_test/game_score");
+    }
+
 	/**
 	 * Implements of hook_services_resources().
 	 */
@@ -587,6 +683,12 @@
 	        		'signout' => array(
 	          			'help' => 'Logout user',
 	          			'callback' => '_skill_test_logout_usr',
+	          			'access callback' => '_skill_test_access',
+	          			'access arguments' => array('access content'),
+	        		),
+	        		'leaderboard' => array(
+	          			'help' => 'Create Game Leaderboard',
+	          			'callback' => '_skill_test_game_leaderboard',
 	          			'access callback' => '_skill_test_access',
 	          			'access arguments' => array('access content'),
 	        		),
@@ -747,14 +849,54 @@
 		$game_name = $args['game_name'];
 		$player_name = $args['player_name'];
 		$score = $args['score'];
+		$type = $args['type'];
 
 		$pdid = db_insert('game_score')
 					->fields(array(
 						'game_name' => $game_name,
 						'player_name' => $player_name,
 						'score' => $score,
+						'type' => $type
 					))->execute();
 		return var_dump($args);
+	}
+
+	function _skill_test_game_leaderboard()
+	{
+		$sql_query = db_select('game_score', 'g')
+					->distinct()
+	    			->fields('g',array('type'))
+	    			->orderBy('type');
+	   	$result = $sql_query->execute();
+	   	while($baris = $result->fetchObject())
+	   	{
+	   		$game_type = $baris->type;
+			$query = db_select('game_score', 'g')
+		    			->fields('g',array('score','type', 'id'))
+		    			->condition('g.type',$game_type)
+		    			->orderBy('score', 'DESC');
+		   	$results = $query->execute();
+
+		   	$hitung = 1;
+		   	while($hasil = $results->fetchObject())
+		   	{
+		   		$id_player_game = $hasil->id;
+		   		$prid= db_update('game_score')
+								->fields(array(
+									'rank' => $hitung,
+								))
+								->condition('id', $id_player_game, '=')	
+								->execute();
+				$hitung++;
+		   	}
+	   	}
+
+	   	$status = "S";
+	   	$ket_status = "Update Success";
+
+	   	$data['status'] = $status;
+	   	$data['ket_status'] = $ket_status;
+		return $data;
 	}
 
 	function custom_drupal_mail($from = 'default_from', $to, $subject = null, $message, $filename = null, $filepath = null) {

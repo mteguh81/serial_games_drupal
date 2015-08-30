@@ -14,7 +14,7 @@ print '</pre>';*/
 
     <?php
         print bartik_get_login_form();
-    	/*print drupal_render($form['name']);
+/*    	print drupal_render($form['name']);
     	print drupal_render($form['pass']);
     	print drupal_render($form['form_build_id']);
     	print drupal_render($form['form_id']);

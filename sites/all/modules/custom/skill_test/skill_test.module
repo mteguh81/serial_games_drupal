@@ -31,26 +31,62 @@
      		'page callback' => 'act_logout',
      		'access arguments' => array('skill_test'),
    		);
+   		$menu['skill_test/list_file'] = array
+  		(
+    		'title' => 'List Uploaded File',
+    		'type' => MENU_CALLBACK,
+    		'page callback' => 'page_list_file',
+    		'access callback' => TRUE,
+  		);
 
   		return $items;
+	}
+
+	function skill_test_theme()
+	{
+  		 return array(
+	        'list_file' => array(
+	            'render element' => 'elements',
+	            'template' => 'templates/list-file',
+	            'variables' => array('contents' => ''),
+        	),
+    	);
+	}
+
+	function page_list_file()
+	{
+		$query = new EntityFieldQuery();
+		$result = $query->entityCondition('entity_type', 'node')
+  			->entityCondition('bundle','list_file')
+  			->execute();
+		$nodes = node_load_multiple(array_keys($result['node']));
+
+		return theme('list_file', array('contents' => $nodes));
 	}
 
 	function page_upload_file()
 	{
 		$form_upload_file = drupal_get_form('form_upload_file');
 		$output = drupal_render($form_upload_file);
+		$output .= page_list_file();
+
 		return $output; 
 	}
 
 	function form_upload_file($form,$form_state)
 	{
-		$form['file'] = array(
+		$form['up'] = array(
+			'#type' => 'fieldset',
+			'#title' => 'Upload',
+		);
+
+		$form['up']['file'] = array(
 			'#type' => 'file',
 			'#title' => 'File',
 			'#required' => FALSE,
 		);
 
-		$form['submit'] = array(
+		$form['up']['submit'] = array(
 			'#type' => 'submit',
 			'#value' => 'Upload',
 		);
@@ -60,7 +96,7 @@
 
 	function form_upload_file_submit($form,$form_state)
 	{
-		$url = 'http://localhost/serial_games_drupal/api/registration/registration/upload'; // request URL
+		$url = 'http://localhost/serial_games_drupal/api/registration/registration/upload.xml'; // request URL
 		$filename = $_FILES['files']['name']['file'];
 		$filedata = $_FILES['files']['tmp_name']['file'];
 		$filesize = $_FILES['files']['size']['file'];
@@ -90,8 +126,21 @@
     		{
 	        	$errmsg = curl_error($ch);
     		}
-    		curl_close($ch);
-    		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+    		
+    		$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+			$header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+			$header = substr($response, 0, $header_size);
+			$body = substr($response, $header_size);
+
+			curl_close($ch);
+
+			drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
+
+			$xml = simplexml_load_string($body);
+			$json = json_encode($xml);
+			$obj = json_decode($json);
+			//$array = json_decode($json,TRUE);
+			drupal_set_message("<pre>".print_r($obj,TRUE)."</pre>");
 		}
 		else
 		{
@@ -103,6 +152,9 @@
 
 	function page_game_score()
 	{
+		/*global $user;
+    	drupal_set_message("<pre>".print_r($user,TRUE)."</pre>");*/
+
 		$form_game_score = drupal_get_form('form_game_score');
 		$output = drupal_render($form_game_score);
 		$output .= page_list_game_leaderboard();
@@ -370,7 +422,7 @@
     function generate_new_account($username,$password,$email)
     {
     	global $base_url;
-    	$service_url = $base_url.'/api/registration/registration/create'; // .xml asks for xml data in response
+    	$request_url = $base_url.'/api/registration/registration/create.json'; // .xml asks for xml data in response
 		
 		$post_data = array(
     		'username' => $username,
@@ -378,19 +430,28 @@
     		'mail' => $email
     	);
 
-		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
-		// set up the request
-		$curl = curl_init($service_url);
-		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);  // have curl_exec return a string
-		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		$post_data = json_encode($post_data);
 
-		curl_setopt($curl, CURLOPT_POST, true);             // do a POST
-		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // POST this data
-		// make the request
-		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
+		// cURL
+		$curl = curl_init();
+		curl_setopt($curl, CURLOPT_URL, $request_url);
+		curl_setopt($curl, CURLOPT_POST, 1); // Do a regular HTTP POST
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // Set POST data
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+
 		$response = curl_exec($curl);
+		
+		$http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+		$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+		$header = substr($response, 0, $header_size);
+		$body = substr($response, $header_size);
+
 		curl_close($curl);
-		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+
+		drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
+		drupal_set_message("<pre>".print_r(json_decode($body),TRUE)."</pre>");
     }
 
     /**
@@ -399,25 +460,34 @@
     function generate_new_password($name)
     {
     	global $base_url;
-    	$service_url = $base_url.'/api/registration/registration/forgot'; // .xml asks for xml data in response
+    	$request_url = $base_url.'/api/registration/registration/forgot.json'; // .json asks for json data in response
 		
 		$post_data = array(
     		'name' => $name,
     	);
 
-		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
-		// set up the request
-		$curl = curl_init($service_url);
-		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);  // have curl_exec return a string
-		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		$post_data = json_encode($post_data);
 
-		curl_setopt($curl, CURLOPT_POST, true);             // do a POST
-		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // POST this data
-		// make the request
-		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
+		// cURL
+		$curl = curl_init();
+		curl_setopt($curl, CURLOPT_URL, $request_url);
+		curl_setopt($curl, CURLOPT_POST, 1); // Do a regular HTTP POST
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // Set POST data
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+
 		$response = curl_exec($curl);
+		
+		$http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+		$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+		$header = substr($response, 0, $header_size);
+		$body = substr($response, $header_size);
+
 		curl_close($curl);
-		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+
+		drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
+		drupal_set_message("<pre>".print_r(json_decode($body),TRUE)."</pre>");
     }
 
     /**
@@ -425,7 +495,8 @@
 	*/
     function generate_game_score($game_name,$player_name,$score,$type)
     {
-    	$service_url = 'http://localhost/serial_games_drupal/api/registration/registration/score'; // .xml asks for xml data in response
+    	global $base_url;
+    	$request_url = $base_url.'/api/registration/registration/score.json'; // .json asks for json data in response
 		
 		$post_data = array(
     		'game_name' => $game_name,
@@ -434,19 +505,28 @@
     		'type' => $type
     	);
 
-		$post_data = http_build_query($post_data, '', '&'); // Format post data as application/x-www-form-urlencoded
-		// set up the request
-		$curl = curl_init($service_url);
-		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);  // have curl_exec return a string
-		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		$post_data = json_encode($post_data);
 
-		curl_setopt($curl, CURLOPT_POST, true);             // do a POST
-		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // POST this data
-		// make the request
-		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
+		// cURL
+		$curl = curl_init();
+		curl_setopt($curl, CURLOPT_URL, $request_url);
+		curl_setopt($curl, CURLOPT_POST, 1); // Do a regular HTTP POST
+		curl_setopt($curl, CURLOPT_HEADER, TRUE);
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+		curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data); // Set POST data
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+
 		$response = curl_exec($curl);
+		
+		$http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+		$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+		$header = substr($response, 0, $header_size);
+		$body = substr($response, $header_size);
+
 		curl_close($curl);
-		drupal_set_message("<pre>".print_r($response,TRUE)."</pre>");
+
+		drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
+		drupal_set_message("<pre>".print_r(json_decode($body),TRUE)."</pre>");
     }
 
     /**
@@ -466,7 +546,7 @@
 		$csrf_header = 'X-CSRF-Token: ' . $csrf_token;
 
 		// REST Server URL
-		$request_url =  $base_url.'/api/registration/registration/signin.json';
+		$request_url =  $base_url.'/api/registration/registration/signin.xml';
 
 		// User data
 		$user_data = array(
@@ -495,19 +575,47 @@
 		curl_close($curl);
 
 		drupal_set_message("<pre>".print_r($header,TRUE)."</pre>");
-		drupal_set_message("<pre>".print_r(json_decode($body),TRUE)."</pre>");
 
-		$content = json_decode($body);
+		$xml = simplexml_load_string($body);
+		$json = json_encode($xml);
+		$obj = json_decode($json);
+		//$array = json_decode($json,TRUE);
+		drupal_set_message("<pre>".print_r($obj,TRUE)."</pre>");
+
+		$status = $obj->status;
+		$ket_status = $obj->ket_status;
+
+		if($status == 'S')
+		{
+			// parse the response
+			$xml = new SimpleXMLElement($body);
+			$session_cookie = $xml->session_name .'='. $xml->sessid;
+
+			file_put_contents('session_cookie.txt', $session_cookie);
+
+			$user_id = $obj->user->uid;
+			
+			$form_state = array();
+      		$form_state['uid'] = $user_id;      
+      		user_login_submit(array(), $form_state);
+		}
+		else
+		{
+			drupal_goto();
+		}
+		
+		/*$content = json_decode($body);
 
 		$status = $content->status;
 		$ket_status = $content->ket_status;
 		if($status == 'S')
 		{
 			$user_obj = user_load_by_name($username);
+			//drupal_set_message("<pre>".print_r($user_obj,TRUE)."</pre>");
       		$form_state = array();
       		$form_state['uid'] = $user_obj->uid;      
       		user_login_submit(array(), $form_state);
-		}
+		}*/
     }
 
     /**
@@ -516,29 +624,22 @@
     function generate_logout_user()
     {
     	global $base_url;
-    	global $user;
-
-    	// Retrieve CSRF token
-		$curl_get = curl_init();
-		curl_setopt_array($curl_get, array(
-    		CURLOPT_RETURNTRANSFER => 1,
-    		CURLOPT_URL => $base_url.'/api/registration/user/token',
-		));
-		$csrf_token = curl_exec($curl_get);
-		curl_close($curl_get);
-		$csrf_header = 'X-CSRF-Token: ' . $csrf_token;
 
 		// REST Server URL
-		$request_url =  $base_url.'/api/registration/registration/signout';
+		$request_url =  $base_url.'/api/registration/user/logout';
+
+		//Session Cookie
+		$session_cookie = file_get_contents('session_cookie.txt');
 
 		// cURL
 		$curl = curl_init();
 		curl_setopt($curl, CURLOPT_URL, $request_url);
+		curl_setopt($curl, CURLOPT_COOKIE, "$session_cookie"); // use the previously saved session
 		curl_setopt($curl, CURLOPT_POST, 1); // Do a regular HTTP POST
 		curl_setopt($curl, CURLOPT_HEADER, TRUE);
-		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json',$csrf_header));
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+		curl_setopt($curl, CURLOPT_POSTFIELDS, ''); // Set POST data
 		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
-		curl_setopt($curl, CURLOPT_VERBOSE, true); // output to command line
 
 		$response = curl_exec($curl);
 		
@@ -557,7 +658,7 @@
 
 		$status = $content->status;
 		$ket_status = $content->ket_status;*/
-		return TRUE;
+		drupal_goto();
     }
 
     /**
@@ -725,7 +826,14 @@
 		//the first parameter is left blank so a new user is created
 		$account = user_save('', $fields);
 
-		return var_dump(json_encode($args));
+		$status = "S";
+	   	$ket_status = "Created a new user account for ".$username."";
+
+	   	$data['status'] = $status;
+	   	$data['ket_status'] = $ket_status;
+		$data['args'] = $args;
+
+		return $data;
 	}
 
 	/**
@@ -743,7 +851,13 @@
 	   	$email = $results->mail;
 
 	   	$mail_sent = custom_drupal_mail('default_from', $email, '(Serial Games) - Konfirmasi Reset Password', 'Kepada Yth. Pemilik email '.$email.'<br/> di<br/> Tempat<br/><br/>Untuk melakukan proses reset password, silahkan klik tautan di bawah ini.<br/><a href="'.$base_url.'" target="_blank">Klik disini</a><br/><br/>Hormat kami<br/><br/>Pengelola');
-		return var_dump($email);
+
+	   	$status = "S";
+	   	$ket_status = "Further instructions have been sent to your e-mail address.";
+
+	   	$data['status'] = $status;
+	   	$data['ket_status'] = $ket_status;
+		return $data;
 	}
 
 
@@ -755,42 +869,82 @@
 		$username = $args['username'];
 		$password = $args['password'];
 
-		$query = db_select('users', 'u')
-	    			->fields('u',array('name','mail'))
-	    			->condition('u.name', $username)
-	    			->condition('u.status', '1');
-	   	$results = $query->execute()->fetchObject();
+		global $user;
 
-	   	if($results)
-	   	{
-	   		$generate_uid = user_authenticate($username, $password);
-	   		if($generate_uid)
-	   		{
-	   			$status = "S";
-	   			$ket_status = "Authentication Success";
-	   		}
-	   		else
-	   		{
-	   			$status = "E";
-	   			$ket_status = "Sorry, unrecognized username or password";
-	   		}
-	   	}
-	   	else
-	   	{
-	   		$status = "E";
-	   		if(user_is_blocked($username))
-	   		{
-	   			$ket_status = "The username ".$username." has not been activated or is blocked";
-	   		}
-	   		else
-	   		{
-	   			$ket_status = "Sorry, unrecognized username or password";
-	   		}
-	   	}
+  		if ($user->uid) {
+    		// user is already logged in
+    		$status = "E";
+    		$ket_status = "Already logged in as ".$user->name;
 
-	   	$data['status'] = $status;
-	   	$data['ket_status'] = $ket_status;
-		return $data;
+    		$data['status'] = $status;
+    		$data['ket_status'] = $ket_status;
+
+    		return $data;
+  		}
+
+  		// Check if account is active.
+  		if (user_is_blocked($username)) {
+  			$status = "E";
+  			$ket_status = "The username ".$username." has not been activated or is blocked.";
+
+  			$data['status'] = $status;
+    		$data['ket_status'] = $ket_status;
+
+    		return $data;
+  		}
+
+  		// Emulate drupal native flood control: check for flood condition.
+  		$flood_state = array();
+  		if (variable_get('services_flood_control_enabled', TRUE)) {
+    		$flood_state = _user_resource_flood_control_precheck($username);
+  		}
+
+  		// Only authenticate if a flood condition was not detected.
+  		if (empty($flood_state['flood_control_triggered'])) {
+    		$uid = user_authenticate($username, $password);
+  		}
+  		else {
+    		$uid = FALSE;
+  		}
+
+  		// Emulate drupal native flood control: register flood event, and throw error
+  		// if a flood condition was previously detected
+  		if (variable_get('services_flood_control_enabled', TRUE)) {
+    		$flood_state['uid'] = $uid;
+    		_user_resource_flood_control_postcheck($flood_state);
+  		}
+
+  		if ($uid) {
+    		$user = user_load($uid);
+    		if ($user->uid) {
+      			user_login_finalize();
+
+      			$return = new stdClass();
+      			$return->sessid = session_id();
+      			$return->session_name = session_name();
+      			$return->token = drupal_get_token('services');
+
+      			$account = clone $user;
+
+      			services_remove_user_data($account);
+
+      			$return->user = $account;
+
+      			$return->status = "S";
+      			$return->ket_status = "Authentication Success.";
+
+      			return $return;
+    		}
+  		}
+  		watchdog('user', 'Invalid login attempt for %username.', array('%username' => $username));
+
+  		$status = "E";
+  		$ket_status = "Wrong username or password.";
+
+  		$data['status'] = $status;
+    	$data['ket_status'] = $ket_status;
+
+    	return $data;
 	}
 
 	/**
@@ -800,10 +954,10 @@
 	{
 	  	global $user;
 
-	  	if (!$user->uid) {
+	  	/*if (!$user->uid) {
 		    // User is not logged in
 	    	return services_error(t('User is not logged in.'), 406);
-	  	}
+	  	}*/
 
 	  	watchdog('user', 'Session closed for %name.', array('%name' => $user->name));
 
@@ -827,18 +981,61 @@
  	* Callback function for upload file
  	*/
 	function _skill_test_upload_file($args) {
+		global $user;
+		$path_public = variable_get('file_public_path', conf_path() . '/files');
 		if(isset($_FILES['filedata']['name'])){
-			$validator = array();
-			if(move_uploaded_file($_FILES["filedata"]["tmp_name"],"public://" . $args['filename']))
-			{
-				$msg = "sukses";
-			}
-			else
-			{
-				$msg = "gagal";
+			$file = new stdClass();
+           	$file->status   = 0;
+            $file->filename = trim(drupal_basename($args['filename']), '.');
+            $file->uri      = $args['filename'];
+            $file->filemime = file_get_mimetype($file->filename);
+            $file->filesize = $_FILES['filedata']['size'];
+            $file->uid 		= 1;
+            $destination = 'public://';
+            $destination_scheme = file_uri_scheme($destination);
+            if (!$destination_scheme || !file_stream_wrapper_valid_scheme($destination_scheme)) {
+                return FALSE;
+            }
+            $file->destination = file_destination($destination . $file->filename, $replace);
+            if (substr($destination, -1) != '/') {
+                $destination .= '/';
+            }
+            $file->uri = $file->destination;
+            if (!drupal_move_uploaded_file($_FILES['filedata']['tmp_name'], $file->uri)) {
+                watchdog('file', 'Upload error. Could not move uploaded file %file to destination %destination.', array('%file' => $file->filename, '%destination' => $file->uri));
+                    return FALSE;
+            }
+            drupal_chmod($file->uri);
+            $file = file_save($file);
+
+			/* $file = move_uploaded_file($_FILES["filedata"]["tmp_name"],"public://" . $args['filename']); */
+
+			if ($file->fid) {
+				$node = new stdClass();
+				$node->type = "list_file";
+				node_object_prepare($node);
+
+				$node->uid = 1;
+				$node->title = 'Upload File';
+				$node->sticky = 0;
+				$node->language = 'en';
+
+				// Let's add standard body field
+				$node->body['und'][0]['format'] = 'filtered_html';
+				$node->body['und'][0]['value'] = 'Body info';
+
+				$node->field_filename[LANGUAGE_NONE][0]['value'] = $file->filename;
+				$node->field_filemime[LANGUAGE_NONE][0]['value'] = $file->filemime;
+				$node->field_fid[LANGUAGE_NONE][0]['value'] = $file->fid;
+				$node->field_uri[LANGUAGE_NONE][0]['value'] = $file->uri;
+
+				$node->revision = 0;
+
+				$node = node_submit($node);
+				node_save($node);
 			}
 		}
-		return var_dump(json_encode($args));
+		return $file;
 	}
 
 	/**
@@ -858,7 +1055,13 @@
 						'score' => $score,
 						'type' => $type
 					))->execute();
-		return var_dump($args);
+
+		$status = "S";
+	   	$ket_status = "Update Success";
+
+	   	$data['status'] = $status;
+	   	$data['ket_status'] = $ket_status;
+		return $data;
 	}
 
 	function _skill_test_game_leaderboard()

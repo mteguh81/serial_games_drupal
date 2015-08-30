@@ -7,8 +7,6 @@ A. Status pengerjaan
    - Rest API untuk lupa password
    - Rest API untuk upload file
    - Rest API untuk menyimpan nilai dari setiap game
-   - Rest API untuk login
+   - Rest API untuk login & logout
    - Rest API untuk penentuan leaderboard setiap game
    - Custom .tpl page untuk menampilkan daftar file yang sudah terupload
-2. Progress
-   - Rest API untuk logout
